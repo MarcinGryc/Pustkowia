@@ -1,0 +1,34 @@
+services:
+  - type: web
+    name: pustkowia
+    runtime: docker
+    plan: 0.5c-512mb
+    region: frankfurt
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/health
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: pustkowia-db
+          property: connectionString
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ENVIRONMENT
+        value: production
+      - key: APP_ORIGIN
+        sync: false
+      - key: DEMO_ENABLED
+        value: "false"
+      - key: WORLD_SOURCE
+        value: osm
+      - key: MAP_TILES_URL
+        value: https://tile.openstreetmap.org/{z}/{x}/{y}.png
+      - key: MAP_ATTRIBUTION
+        value: © OpenStreetMap contributors
+databases:
+  - name: pustkowia-db
+    plan: 0.1c-256mb
+    region: frankfurt
+    databaseName: pustkowia
+    user: pustkowia
+    ipAllowList: []

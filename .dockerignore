@@ -1,0 +1,11 @@
+node_modules
+dist
+.venv
+.env
+.env.*
+.git
+.npm-cache
+test-results
+__pycache__
+*.pyc
+.tools

@@ -1,0 +1,9 @@
+export type Fix = { lat: number; lng: number; accuracy: number; timestamp: number; demo: boolean }
+export type Item = { name: string; kind: 'weapon' | 'armor' | 'other'; icon: string; description: string; attack: number; defense: number; price: number; sell: number; heal?: number }
+export type Enemy = { name: string; hp: number; max_hp: number; icon: string; kind: string }
+export type Point = { id: string; name: string; type: 'city' | 'spot'; lat: number; lng: number; source: string; cooldown_until: number; encounter: Enemy[] | null }
+export type Battle = { id: string; point_id: string; enemies: Enemy[]; index: number; log: string[]; turn: number }
+export type Summary = { id: string; result: 'victory' | 'defeat' | 'fled'; rewards: { gold: number; xp: number; loot: Record<string, number>; levels?: number }; log: string[] }
+export type Player = { level: number; gold: number; rank: string; hp: number; max_hp: number; xp: number; xp_next: number; stats: { attack: number; defense: number }; inventory: Record<string, number>; equipment: Record<'weapon' | 'armor', string | null>; points: Point[]; battle: Battle | null; last_battle: Summary | null; expedition: { id: string; active: boolean; seq: number; distance: number; estimated: number } | null; today_distance: number }
+export type Config = { csrf: string; demo_enabled: boolean; interaction_radius: number; max_accuracy: number; location_max_age: number; map_style: string; map_tiles: string; map_attribution: string; catalog: Record<string, Item>; shop: string[] }
+export type ActionData = { action: string; [key: string]: unknown }
