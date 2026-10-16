@@ -112,11 +112,13 @@ Przeglądarka wysyła kafle do dostawcy mapy, a backend przekazuje początkowe w
 ## Render.com
 
 1. Umieść projekt w swoim repozytorium Git. W Render wybierz **New → Blueprint** i wskaż repozytorium.
-2. `render.yaml` tworzy jeden Web Service Docker oraz oddzielny Render Postgres w tej samej lokalizacji. Plany w pliku są płatne — sprawdź wycenę w panelu przed utworzeniem zasobów. Nic nie zostało automatycznie wdrożone.
+2. `render.yaml` tworzy jeden darmowy Web Service Docker oraz oddzielny płatny Render Postgres w tej samej lokalizacji. Sprawdź wycenę bazy, miejsca na dane i ewentualnego przekroczenia limitów przed utworzeniem zasobów. Nic nie zostało automatycznie wdrożone. Darmowy Web Service usypia się po 15 minutach bez ruchu; ponowne uruchomienie zajmuje około minuty. Limit darmowych godzin jest wspólny dla workspace. Szczegóły: [Render Free](https://render.com/docs/free).
 3. Wymagany `APP_ORIGIN` ustaw na dokładny adres HTTPS usługi, np. `https://pustkowia.onrender.com`. Jeżeli Render przydzieli inną nazwę, popraw wartość i zrestartuj usługę. Przy własnej domenie ustaw jej origin.
 4. `DATABASE_URL` jest pobierany z wewnętrznego adresu Render Postgres; `SECRET_KEY` generuje Render. Zostaw `ENVIRONMENT=production` i `DEMO_ENABLED=false`.
 5. Docker buduje React i kopiuje wynik do obrazu Pythona. Start uruchamia `alembic upgrade head`, a następnie Uvicorn na `0.0.0.0:$PORT`. Kontrola zdrowia `/api/health` sprawdza połączenie z bazą.
 6. Po wdrożeniu zarejestruj konto i sprawdź sesję oraz GPS przez HTTPS. Skonfiguruj kopie zapasowe bazy zgodnie z wybranym planem.
+
+Jeżeli masz już bazę i Web Service, nie twórz kolejnego kompletu przez nowy Blueprint. W istniejącej usłudze wybierz plan Free i zachowaj połączenie z obecną bazą. Jeśli usługa jest zarządzana przez Blueprint, zsynchronizuj zmianę `plan: free` z repozytorium, żeby kolejna synchronizacja nie przywróciła płatnego planu. Przy ręcznym tworzeniu Web Service wybierz repozytorium, środowisko Docker, plan Free i region istniejącej bazy; ustaw `DATABASE_URL` na jej Internal Database URL, losowy `SECRET_KEY`, `ENVIRONMENT=production`, `DEMO_ENABLED=false` oraz `APP_ORIGIN` na publiczny adres HTTPS aplikacji bez końcowego `/`. Komendę startu zapewnia Dockerfile.
 
 MVP zakłada **jedną instancję usługi** przy migracji wykonywanej w komendzie startu. Przed skalowaniem przenieś migrację do osobnego zadania/pre-deploy, żeby wiele instancji nie wykonywało jej jednocześnie. Same mutacje gry są serializowane w PostgreSQL blokadą wiersza gracza. Dokumentacja: [Render Blueprint](https://render.com/docs/blueprint-spec), [wdrożenia Docker](https://render.com/docs/docker).
 

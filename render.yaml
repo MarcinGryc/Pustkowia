@@ -2,7 +2,7 @@ services:
   - type: web
     name: pustkowia
     runtime: docker
-    plan: 0.5c-512mb
+    plan: free
     region: frankfurt
     dockerfilePath: ./Dockerfile
     healthCheckPath: /api/health
