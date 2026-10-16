@@ -18,10 +18,10 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import delete, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session as DBSession
-from .catalog import ITEMS, SHOP, new_state
+from .catalog import ITEMS, SHOP, SETTLEMENTS, new_state, sell_price
 from .config import settings
 from .db import LoginBucket, Player, Receipt, Session, engine, get_db
-from .game import (battle_action, choose_upgrade, encounter, fail, inventory_add, medkit,
+from .game import (battle_action, encounter, fail, inventory_add, medkit,
                    point_access, public_state, record_location, refresh_state, start_battle, validate_fix)
 from .world import distance, generate_world
 
@@ -83,9 +83,8 @@ class Fix(BaseModel):
 class Action(BaseModel):
     model_config = ConfigDict(extra='forbid')
     key: uuid.UUID
-    action: Literal['equip', 'unequip', 'heal', 'buy', 'sell', 'start_expedition', 'end_expedition', 'location', 'search', 'inspect', 'battle_start', 'battle_action', 'upgrade', 'nickname']
+    action: Literal['equip', 'unequip', 'heal', 'buy', 'sell', 'start_expedition', 'end_expedition', 'location', 'search', 'inspect', 'battle_start', 'battle_action', 'nickname']
     nickname: str | None = Field(default=None, max_length=24)
-    upgrade: Literal['attack', 'defense', 'hp'] | None = None
     item: str | None = Field(default=None, max_length=40)
     quantity: int = Field(default=1, ge=1, le=99, strict=True)
     slot: Literal['weapon', 'armor'] | None = None
@@ -95,7 +94,7 @@ class Action(BaseModel):
     seq: int = Field(default=0, ge=0, le=9007199254740991, strict=True)
     battle_id: uuid.UUID | None = None
     turn: int = Field(default=0, ge=0, le=1000000, strict=True)
-    move: Literal['attack', 'medkit', 'flee'] = 'attack'
+    move: Literal['attack', 'unarmed', 'grenade', 'medkit', 'flee'] = 'attack'
 
 
 def digest(value):
@@ -185,7 +184,7 @@ def bootstrap(request: Request, response: Response, db: DBSession = Depends(get_
     return dict(csrf=csrf_token, demo_enabled=cfg.demo_enabled, interaction_radius=cfg.interaction_radius_m,
                 max_accuracy=cfg.max_accuracy_m, location_max_age=cfg.location_max_age_s,
                 map_style=cfg.map_style_url, map_tiles=cfg.map_tiles_url, map_attribution=cfg.map_attribution,
-                catalog=ITEMS, shop=SHOP)
+                catalog=ITEMS, shop=SHOP, settlements=SETTLEMENTS)
 
 
 @app.post('/api/register')
@@ -264,7 +263,7 @@ def action(body: Action, session=Depends(current), db: DBSession = Depends(get_d
         if not fix or not body.point_id:
             fail('Wymagane miejsce i aktualna lokalizacja.')
         point = point_access(s, str(body.point_id), fix)
-    if kind in ('equip', 'unequip', 'heal', 'buy', 'sell', 'search', 'upgrade', 'end_expedition') and s['battle']:
+    if kind in ('equip', 'unequip', 'heal', 'buy', 'sell', 'search', 'end_expedition') and s['battle']:
         fail('Dokończ aktywną walkę. Apteczkę użyj w ekranie walki.')
     if kind in ('equip', 'buy', 'sell') and body.item not in ITEMS:
         fail('Nieznany przedmiot.')
@@ -279,8 +278,6 @@ def action(body: Action, session=Depends(current), db: DBSession = Depends(get_d
         s['equipment'][body.slot] = None
     elif kind == 'heal':
         medkit(s)
-    elif kind == 'upgrade':
-        choose_upgrade(s, body.upgrade)
     elif kind == 'nickname':
         s['nickname'] = normalize_nickname(body.nickname)
     elif kind in ('buy', 'sell'):
@@ -302,7 +299,7 @@ def action(body: Action, session=Depends(current), db: DBSession = Depends(get_d
             if s['inventory'].get(body.item, 0) < body.quantity:
                 fail('Nie masz tylu przedmiotów.')
             inventory_add(s, body.item, -body.quantity)
-            s['gold'] += ITEMS[body.item]['sell'] * body.quantity
+            s['gold'] = round(s['gold'] + sell_price(body.item, point) * body.quantity, 1)
     elif kind == 'start_expedition':
         if not s['expedition'] or not s['expedition']['active']:
             s['expedition'] = dict(id=str(uuid.uuid4()), active=True, distance=0, estimated=0, seq=0, last=None)

@@ -3,6 +3,7 @@ import random
 import uuid
 import httpx
 from .config import settings
+from .catalog import SETTLEMENTS
 
 
 def distance(a, b):
@@ -34,18 +35,21 @@ def generate_world(p):
             pass
     random.shuffle(candidates)
     cities = [c for c in candidates if 200 <= distance(p, c) <= 500]
-    city = cities[0] if cities else None
-    selected = [c for c in candidates if city and distance(c, city) > 65][:6]
+    cities = cities[:3]
+    selected = [c for c in candidates if cities and all(distance(c, city) > 65 for city in cities)][:6]
     # A mixed fallback would hide which markers were verified. Flag the entire world instead.
-    sourced = city is not None and len(selected) == 6
+    sourced = len(cities) == 3 and len(selected) == 6
     if not sourced:
         bearing = random.uniform(0, math.tau)
-        city = offset(p, random.uniform(220, 480), bearing)
+        cities = [offset(p, random.uniform(220, 480), bearing + i * math.tau / 3) for i in range(3)]
         selected = [offset(p, random.uniform(120 + i * 130, 220 + i * 130),
                            bearing + i * math.tau / 6 + 1) for i in range(6)]
     names = ['Przepompownia', 'Stary wiadukt', 'Martwy sygnał', 'Zarośnięty magazyn', 'Cichy zaułek', 'Ostatni posterunek']
-    points = [dict(id=str(uuid.uuid4()), type='city', name='Osada Iskra', **city)]
+    points = [dict(id=str(uuid.uuid4()), type='city', settlement=kind, name=SETTLEMENTS[kind]['name'], **city)
+              for kind, city in zip(SETTLEMENTS, cities)]
     points += [dict(id=str(uuid.uuid4()), type='spot', name=names[i], **q) for i, q in enumerate(selected)]
+    # Keep the original combat slots stable for older clients and saved selections.
+    points = points[:1] + points[3:] + points[1:3]
     for point in points:
         point.update(source='osm_paths' if sourced else 'demonstration', cooldown_until=0, encounter=None)
     return points

@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from fastapi import HTTPException
-from .catalog import ITEMS, ENEMIES, BASE_ATTACK, max_hp, stats, xp_threshold
+from .catalog import ITEMS, ENEMIES, SETTLEMENTS, BASE_ATTACK, BASE_HP, max_hp, stats, xp_threshold
 from .config import settings
 from .world import distance
 
@@ -45,9 +45,16 @@ def refresh_state(s, now=None):
     """Upgrade older saves and settle whole minutes, including time spent offline."""
     now = time.time() if now is None else now
     s.setdefault('nickname', None)
-    # Preserve HP already earned with the old automatic level bonuses.
-    s.setdefault('upgrades', dict(attack=0, defense=0, hp=(s['level'] - 1) * 12))
-    s.setdefault('upgrade_points', 0)
+    for point in s['points']:
+        if point['type'] == 'city':
+            point.setdefault('settlement', 'settlement')
+            point['name'] = SETTLEMENTS[point['settlement']]['name']
+    # Convert saves from the temporary choice system while preserving missing HP.
+    if 'upgrades' in s or 'upgrade_points' in s:
+        previous_max = BASE_HP + s.get('upgrades', {}).get('hp', max_hp(s) - BASE_HP)
+        s['hp'] = min(max_hp(s), s['hp'] + max(0, max_hp(s) - previous_max))
+        s.pop('upgrades', None)
+        s.pop('upgrade_points', None)
     s.setdefault('regen_at', now)
     if s['battle'] or s['hp'] >= max_hp(s):
         s['regen_at'] = None
@@ -58,18 +65,6 @@ def refresh_state(s, now=None):
     if minutes:
         s['hp'] = min(max_hp(s), s['hp'] + minutes)
         s['regen_at'] = now if s['hp'] == max_hp(s) else s['regen_at'] + minutes * 60
-
-
-def choose_upgrade(s, choice):
-    if s['upgrade_points'] < 1:
-        fail('Nie masz punktów rozwoju do wydania.')
-    if choice not in ('attack', 'defense', 'hp'):
-        fail('Wybierz premię za awans.')
-    amount = 5 if choice == 'hp' else 1
-    s['upgrades'][choice] += amount
-    s['upgrade_points'] -= 1
-    if choice == 'hp':
-        s['hp'] += amount
 
 
 def public_state(s):
@@ -126,7 +121,8 @@ def finish_battle(s, result):
     if result == 'victory':
         rewards['gold'] = sum(e['gold'] for e in b['enemies'])
         rewards['xp'] = sum(e['xp'] for e in b['enemies'])
-        rewards['loot'] = {RNG.choice(['scrap', 'electronics', 'medkit']): RNG.randint(1, 2)}
+        loot = RNG.choice(['scrap', 'electronics', 'medkit', 'ammo', 'grenade'])
+        rewards['loot'] = {loot: RNG.randint(4, 12) if loot == 'ammo' else RNG.randint(1, 2)}
         s['gold'] += rewards['gold']
         s['xp'] += rewards['xp']
         for item, qty in rewards['loot'].items():
@@ -137,7 +133,6 @@ def finish_battle(s, result):
             s['level'] += 1
             levels += 1
         if levels:
-            s['upgrade_points'] = s.get('upgrade_points', 0) + levels
             s['hp'] = max_hp(s)
         rewards['levels'] = levels
     if result == 'defeat':
@@ -164,9 +159,22 @@ def battle_action(s, battle_id, turn, action):
         healed = medkit(s)
         b['log'].append(f'Apteczka przywraca {healed} HP.')
     else:
-        damage = max(1, stats(s)['attack'] + RNG.randint(-2, 3) - enemy['defense'])
+        if action == 'grenade':
+            if s['inventory'].get('grenade', 0) < 1:
+                fail('Nie masz granatu.')
+            inventory_add(s, 'grenade', -1)
+            damage = ITEMS['grenade']['damage']
+        else:
+            weapon = ITEMS.get(s['equipment']['weapon'], {})
+            if action == 'attack' and weapon.get('uses_ammo'):
+                if s['inventory'].get('ammo', 0) < 1:
+                    fail('Brak nabojów. Użyj pięści, granatu albo wycofaj się.')
+                inventory_add(s, 'ammo', -1)
+            attack = BASE_ATTACK if action == 'unarmed' else stats(s)['attack']
+            damage = max(1, attack + RNG.randint(-2, 3) - enemy['defense'])
         enemy['hp'] = max(0, enemy['hp'] - damage)
-        b['log'].append(f"Trafiasz: {damage} obrażeń.")
+        label = 'Granat' if action == 'grenade' else 'Uderzasz pięścią' if action == 'unarmed' else 'Trafiasz'
+        b['log'].append(f'{label}: {damage} obrażeń.')
     if enemy['hp'] == 0:
         b['log'].append(f"{enemy['name']} pada.")
         b['index'] += 1

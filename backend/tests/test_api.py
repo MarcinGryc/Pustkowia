@@ -105,7 +105,7 @@ def test_login_rate_limit(client):
 def test_world_stability_and_two_player_isolation(client):
     auth(client, 'first@example.com')
     points = world(client)
-    assert len(points) == 7 and points[0]['type'] == 'city'
+    assert len(points) == 9 and points[0]['type'] == 'city'
     assert 200 <= __import__('app.world', fromlist=['distance']).distance(fix(), points[0]) <= 500
     assert client.get('/api/me').json()['player']['points'] == points
     with TestClient(app, base_url='http://testserver') as other:
@@ -127,11 +127,11 @@ def test_trade_atomic_idempotent_equipped_and_insufficient_gold(client):
     assert action(client, 'equip', item='club').status_code == 200
     assert me(client)['stats']['attack'] == 18
     assert action(client, 'sell', item='knife', point_id=city['id'], fix=f).status_code == 200
-    assert me(client)['gold'] == 47 and 'knife' not in me(client)['inventory']
+    assert me(client)['gold'] == 48.2 and 'knife' not in me(client)['inventory']
     key = str(uuid.uuid4())
     for _ in range(2):
         assert action(client, 'sell', key, item='medkit', quantity=2, point_id=city['id'], fix=f).status_code == 200
-    assert me(client)['gold'] == 67 and 'medkit' not in me(client)['inventory']
+    assert me(client)['gold'] == 68.2 and 'medkit' not in me(client)['inventory']
     assert action(client, 'unequip', slot='weapon').status_code == 200
     assert me(client)['stats']['attack'] == 6
     with SessionLocal() as db:
@@ -206,8 +206,7 @@ def test_victory_rewards_level_cooldown_and_retry(client):
         assert action(client, 'battle_action', key, battle_id=b['id'], turn=b['turn']).status_code == 200
     s = me(client)
     assert s['battle'] is None and s['last_battle']['result'] == 'victory'
-    assert s['gold'] == 112 and s['level'] == 2 and s['xp'] == 15 and s['hp'] == 100
-    assert s['upgrade_points'] == 1
+    assert s['gold'] == 112 and s['level'] == 2 and s['xp'] == 15 and s['hp'] == 112
     assert sum(s['last_battle']['rewards']['loot'].values()) >= 1
     assert action(client, 'battle_start', point_id=p['id'], fix=fix(p)).status_code == 400
     assert me(client) == s

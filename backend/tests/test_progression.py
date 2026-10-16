@@ -1,14 +1,10 @@
 import copy
 import time
 import uuid
-from concurrent.futures import ThreadPoolExecutor
 
 import pytest
-from fastapi.testclient import TestClient
 from app.catalog import max_hp, new_state, stats
-from app.db import engine
 from app.game import finish_battle, refresh_state
-from app.main import app
 from app.world import distance
 from test_api import PASSWORD, action, auth, edit_state, fix, me, prepare_easy_battle, world
 
@@ -32,7 +28,7 @@ def test_nickname_validation_persistence_and_old_account(client):
     edit_state(legacy)
     s = me(client)
     assert s['nickname'] is None and s['max_hp'] == 136 and s['hp'] == 120
-    assert s['upgrade_points'] == 0
+    assert 'upgrades' not in s and 'upgrade_points' not in s
     assert action(client, 'nickname', nickname='Weteran').status_code == 200
     assert auth(client, mode='login').json()['player']['nickname'] == 'Weteran'
 
@@ -46,7 +42,7 @@ def test_search_moves_world_and_deduplicates_retries(client):
     key = str(uuid.uuid4())
     assert action(client, 'search', key, fix=f).status_code == 200
     found = me(client)
-    assert len(found['points']) == 7
+    assert len(found['points']) == 9
     assert not {p['id'] for p in old} & {p['id'] for p in found['points']}
     assert all(100 <= distance(f, p) <= 1000 for p in found['points'])
     assert 200 <= distance(f, found['points'][0]) <= 500
@@ -74,33 +70,34 @@ def test_search_preserves_nearby_cooldown_and_blocks_during_combat(client, monke
     assert s['points'][1]['cooldown_until'] == old[1]['cooldown_until']
 
 
-@pytest.mark.parametrize('choice,amount', [('attack', 1), ('defense', 1), ('hp', 5)])
-def test_upgrade_choice_is_permanent_and_spent_once(client, choice, amount):
+@pytest.mark.parametrize('bonus_hp,hp,expected_hp', [(0, 60, 96), (5, 85, 116), (5, 105, 136)])
+def test_choice_system_save_converts_once_without_losing_level_or_wounds(client, bonus_hp, hp, expected_hp):
     auth(client)
-    edit_state(lambda s: s.update(upgrade_points=1))
-    before = me(client)
-    key = str(uuid.uuid4())
+    edit_state(lambda s: s.update(level=4, xp=25, hp=hp, upgrades=dict(attack=1, defense=1, hp=bonus_hp), upgrade_points=2))
     for _ in range(2):
-        assert action(client, 'upgrade', key, upgrade=choice).status_code == 200
-    s = me(client)
-    assert s['upgrade_points'] == 0 and s['upgrades'][choice] == amount
-    if choice == 'hp':
-        assert s['max_hp'] == 105 and s['hp'] == 105
-    else:
-        assert s['stats'][choice] == before['stats'][choice] + 1
-    assert action(client, 'upgrade', upgrade=choice).status_code == 400
-    assert auth(client, mode='login').json()['player']['upgrades'] == s['upgrades']
+        s = me(client)
+        assert s['level'] == 4 and s['xp'] == 25 and s['max_hp'] == 136
+        assert s['hp'] == expected_hp
+        assert s['stats'] == dict(attack=6, defense=0)
+        assert 'upgrades' not in s and 'upgrade_points' not in s
+    saved = auth(client, mode='login').json()['player']
+    assert saved['hp'] == expected_hp and saved['max_hp'] == 136
 
 
-def test_multiple_level_rewards_and_no_automatic_stat_increase():
+def test_upgrade_choice_endpoint_removed(client):
+    auth(client)
+    assert action(client, 'upgrade', upgrade='attack').status_code == 422
+
+
+def test_multiple_level_rewards_increase_max_hp_and_heal():
     s = new_state('Test')
     s['points'] = [dict(id='spot', cooldown_until=0, encounter=None)]
     s['battle'] = dict(id='battle', point_id='spot', enemies=[dict(gold=10, xp=650)], log=[])
-    s.update(hp=20, upgrade_points=1)
+    s.update(hp=20)
     finish_battle(s, 'victory')
-    assert s['level'] == 4 and s['xp'] == 50 and s['upgrade_points'] == 4
+    assert s['level'] == 4 and s['xp'] == 50
     assert s['last_battle']['rewards']['levels'] == 3
-    assert s['hp'] == max_hp(s) == 100 and stats(s) == dict(attack=6, defense=0)
+    assert s['hp'] == max_hp(s) == 136 and stats(s) == dict(attack=6, defense=0)
 
 
 def test_regen_whole_minutes_cap_and_no_banked_healing():
@@ -148,18 +145,3 @@ def test_no_regen_during_battle_or_immediately_after(client, monkeypatch):
     assert me(client)['hp'] == 20
     now += 60
     assert me(client)['hp'] == 21
-
-
-@pytest.mark.skipif(engine.dialect.name != 'postgresql', reason='Wymaga PostgreSQL.')
-def test_concurrent_upgrades_cannot_spend_one_point_twice(client):
-    auth(client)
-    edit_state(lambda s: s.update(upgrade_points=1))
-    cookies, headers = dict(client.cookies), dict(client.headers)
-    def upgrade(_):
-        with TestClient(app, base_url='http://testserver') as c:
-            c.cookies.update(cookies)
-            c.headers.update(headers)
-            return action(c, 'upgrade', upgrade='attack').status_code
-    with ThreadPoolExecutor(max_workers=4) as pool:
-        assert sorted(pool.map(upgrade, range(4))) == [200, 400, 400, 400]
-    assert me(client)['stats']['attack'] == 7 and me(client)['upgrade_points'] == 0

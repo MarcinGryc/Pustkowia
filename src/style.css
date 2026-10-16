@@ -26,13 +26,16 @@
 .inventory-portrait-caption p{font-size:11px;line-height:1.8;margin:8px 0 12px}
 .inventory-portrait-caption>span{display:flex;align-items:center;gap:7px;font:11px ui-monospace,monospace;color:#b2c39f}
 .item-icon{width:68px;height:68px;flex-shrink:0}
-.upgrade-panel{padding:24px;margin-bottom:26px;border-color:#b8e77866;display:flex;align-items:center;justify-content:space-between;gap:25px;background:#b8e77808}
-.upgrade-panel h2{font-size:21px;margin:10px 0}
-.upgrade-panel p{font-size:12px;line-height:1.8}
-.upgrade-options{display:flex;gap:10px;flex-wrap:wrap}
-.upgrade-options .button{min-height:54px;white-space:nowrap;border-color:#b8e77866}
-@media(max-width:1050px){.inventory-layout{grid-template-columns:260px minmax(0,1fr);gap:18px}.upgrade-panel{align-items:start;flex-direction:column}.inventory-content .item-grid{grid-template-columns:1fr}}
-@media(max-width:720px){.expedition-heading{display:flex;flex-direction:column;gap:20px}.expedition-heading .end-expedition{width:100%;min-height:68px;font-size:16px;margin-top:0}.inventory-layout{display:block}.inventory-portrait{position:relative;top:0;margin-bottom:24px;display:grid;grid-template-columns:45% 1fr;align-items:center;min-height:260px}.inventory-portrait .character-heading{top:16px;left:16px;right:16px}.inventory-portrait .survivor{margin-top:42px;margin-bottom:10px}.inventory-portrait-caption{padding:48px 16px 20px 5px;margin:0}.inventory-portrait-caption p{font-size:10px}.inventory-portrait .regen-note{font-size:9px}.inventory-content .item-grid{grid-template-columns:1fr}.upgrade-panel{padding:20px;gap:18px}.upgrade-options{width:100%;display:grid;grid-template-columns:1fr 1fr}.upgrade-options .button{font-size:12px;padding:12px 8px;gap:7px}.upgrade-options .button:last-child{grid-column:span 2}.search-panel{padding:16px}.search-button{min-height:80px}.regen-note{font-size:9px}.identity h2{max-width:280px}}
+
+
+
+
+
+@media(max-width:1050px){.inventory-layout{grid-template-columns:260px minmax(0,1fr);gap:18px}.inventory-content .item-grid{grid-template-columns:1fr}}
+@media(max-width:720px){.expedition-heading{display:flex;flex-direction:column;gap:20px}.expedition-heading .end-expedition{width:100%;min-height:68px;font-size:16px;margin-top:0}.inventory-layout{display:block}.inventory-portrait{position:relative;top:0;margin-bottom:24px;display:grid;grid-template-columns:45% 1fr;align-items:center;min-height:260px}.inventory-portrait .character-heading{top:16px;left:16px;right:16px}.inventory-portrait .survivor{margin-top:42px;margin-bottom:10px}.inventory-portrait-caption{padding:48px 16px 20px 5px;margin:0}.inventory-portrait-caption p{font-size:10px}.inventory-portrait .regen-note{font-size:9px}.inventory-content .item-grid{grid-template-columns:1fr}.search-panel{padding:16px}.search-button{min-height:80px}.regen-note{font-size:9px}.identity h2{max-width:280px}}
 
 @media(max-width:720px){.search-panel{display:block;margin-bottom:20px}.search-panel .search-button{width:100%}.search-panel p{margin-top:12px;font-size:11px}}
 @media(max-width:720px){.inventory-portrait{position:sticky;top:8px;z-index:10;min-height:215px;background:#202820f5;box-shadow:0 12px 30px #080e0870}.inventory-portrait .survivor{margin-top:34px}.inventory-portrait-caption{padding-top:42px}}
+
+.combat-supplies{display:flex;justify-content:center;gap:28px;align-items:center;padding:14px 20px;margin-top:22px;flex-wrap:wrap}.combat-supplies>span{display:flex;gap:9px;align-items:center;font-size:12px}.combat-supplies b{color:var(--green)}.combat-supplies p{width:100%;text-align:center;font-size:12px;color:#d6b085}.combat-actions{flex-wrap:wrap}.trade-bonus{display:flex;gap:10px;align-items:center;margin-bottom:22px}.trade-bonus b{color:#bddc9d}.trade-bonus svg{flex-shrink:0}
+@media(max-width:720px){.combat-actions{grid-template-columns:1fr 1fr}.combat-supplies{gap:15px;padding:12px}.combat-supplies>span{font-size:11px}.trade-bonus{font-size:11px;line-height:1.8}}
