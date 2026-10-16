@@ -1,16 +1,17 @@
 import { useEffect, useRef, useState } from 'react'
 import * as maplibregl from 'maplibre-gl'
-import { Crosshair, LocateFixed, MapPin, Navigation, Radio, Shield, Skull, Sun, X } from 'lucide-react'
+import { Crosshair, LoaderCircle, LocateFixed, MapPin, Navigation, Radio, Search, Shield, Skull, Sun, X } from 'lucide-react'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { formatDistance, meters, usable } from './geo'
 import type { Config, Fix, Player, Point } from './types'
 
-type Props = { config: Config; player: Player; fix: Fix | null; setFix: (f: Fix) => void; update: (p: Player) => void; onPoint: (p: Point) => void; onBack: () => void; report: (s: string) => void }
+type Props = { config: Config; player: Player; fix: Fix | null; setFix: (f: Fix) => void; update: (p: Player) => void; onPoint: (p: Point) => void; onBack: () => void; onSearch: () => Promise<boolean>; busy: boolean; report: (s: string) => void }
 
-export default function MapView({ config, player, fix, setFix, onPoint, onBack, report, demo, setDemo, geoError, retry }: Props & { demo: boolean; setDemo: (x: boolean) => void; geoError: string; retry: () => void }) {
+export default function MapView({ config, player, fix, setFix, onPoint, onBack, onSearch, busy, report, demo, setDemo, geoError, retry }: Props & { demo: boolean; setDemo: (x: boolean) => void; geoError: string; retry: () => void }) {
   const node = useRef<HTMLDivElement>(null), map = useRef<maplibregl.Map | null>(null), playerMarker = useRef<maplibregl.Marker | null>(null)
   const markers = useRef<maplibregl.Marker[]>([]), centered = useRef(false)
   const [selected, setSelected] = useState<string | null>(null), [mapError, setMapError] = useState(''), [awake, setAwake] = useState(false)
+  const [searching, setSearching] = useState(false)
   const [coords, setCoords] = useState({ lat: String(fix?.lat ?? 52.2297), lng: String(fix?.lng ?? 21.0122) })
   const wake = useRef<{ release: () => Promise<void>; addEventListener: (s: string, f: () => void) => void } | null>(null)
   const current = useRef({ demo, setFix }); current.current = { demo, setFix }
@@ -58,7 +59,8 @@ export default function MapView({ config, player, fix, setFix, onPoint, onBack, 
   const p = player.points.find(p => p.id === selected)
   const demoMove = (point: Point) => { setFix({ lat: point.lat, lng: point.lng, accuracy: 5, timestamp: Date.now() / 1000, demo: true }); setCoords({ lat: point.lat.toFixed(6), lng: point.lng.toFixed(6) }) }
   return <>
-    <div className="page-title"><div><span className="eyebrow"><span className="live-dot"/> WYPRAWA W TOKU</span><h1>Poza schronieniem<span>.</span></h1><p>Każda droga kryje nową historię.</p></div><button className="button secondary" onClick={onBack}><X size={17}/> Zakończ wyprawę</button></div>
+    <div className="page-title expedition-heading"><div><span className="eyebrow"><span className="live-dot"/> WYPRAWA W TOKU</span><h1>Poza schronieniem<span>.</span></h1><p>Każda droga kryje nową historię.</p></div><button className="button secondary end-expedition" disabled={busy} onClick={onBack}><X size={23}/> Zakończ wyprawę</button></div>
+    <section className="search-panel panel"><button className="button primary search-button" disabled={busy || searching || !fresh} onClick={async () => { setSearching(true); try { if (await onSearch()) { setSelected(null); if (fix) map.current?.flyTo({ center: [fix.lng, fix.lat], zoom: 14 }) } } finally { setSearching(false) } }}>{searching ? <LoaderCircle className="spin" size={25}/> : <Search size={25}/>}<span>{searching ? 'SZUKAM…' : 'SZUKAJ'}<small>LOSUJ NOWE LOKALIZACJE</small></span></button><p>{fresh ? 'Nowa okolica? Odkryj 7 nowych miejsc wokół swojej aktualnej pozycji.' : 'Poczekaj na świeżą pozycję GPS, aby wyszukać miejsca w okolicy.'}</p></section>
     <div className="map-layout"><section className="map-panel panel"><div ref={node} className="map-canvas"/><div className="map-tag"><Radio size={15}/>{fix ? `GPS ±${Math.round(fix.accuracy)} m` : 'Szukam sygnału GPS…'}{demo && <b>DEMO</b>}</div><div className="map-controls"><button className="icon-button" title="Wycentruj mapę" aria-label="Wycentruj mapę" onClick={() => { if (fix) map.current?.flyTo({ center: [fix.lng, fix.lat], zoom: 16 }); else retry() }}><LocateFixed size={20}/></button><button className={`icon-button ${awake ? 'active' : ''}`} title="Utrzymaj ekran" aria-label="Utrzymaj ekran" onClick={() => void toggleWake()}><Sun size={20}/></button></div><div className="map-legend"><span><i className="dot green"/>Ty</span><span><i className="dot lime"/>Osada</span><span><i className="dot orange"/>Zagrożenie</span></div></section>
     <aside className="expedition-sidebar"><div className="distance-card panel"><Navigation size={21}/><div><span className="eyebrow">DYSTANS WYPRAWY</span><strong>{formatDistance(player.expedition?.distance ?? 0)}</strong><small>Dzisiaj: {formatDistance(player.today_distance)}</small>{!!player.expedition?.estimated && <small>W tym szacowane: {formatDistance(player.expedition.estimated)}</small>}</div></div>
     {geoError && <div className="notice warning" role="alert">{geoError}<button onClick={retry}>Ponów GPS</button></div>}{!fix && !geoError && <div className="notice">Zezwól na lokalizację w przeglądarce. Pierwsze połączenie z GPS może chwilę potrwać.</div>}{fix && !fresh && <div className="notice warning">Pomiar jest niedokładny lub nieaktualny. Interakcje wymagają świeżego GPS.</div>}{mapError && <div className="notice warning">{mapError}</div>}

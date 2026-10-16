@@ -21,9 +21,9 @@ from sqlalchemy.orm import Session as DBSession
 from .catalog import ITEMS, SHOP, new_state
 from .config import settings
 from .db import LoginBucket, Player, Receipt, Session, engine, get_db
-from .game import (battle_action, encounter, fail, inventory_add, medkit,
-                   point_access, public_state, record_location, start_battle, validate_fix)
-from .world import generate_world
+from .game import (battle_action, choose_upgrade, encounter, fail, inventory_add, medkit,
+                   point_access, public_state, record_location, refresh_state, start_battle, validate_fix)
+from .world import distance, generate_world
 
 app = FastAPI(title='Pustkowia', docs_url='/api/docs', openapi_url='/api/openapi.json')
 cfg = settings()
@@ -68,6 +68,7 @@ class Credentials(BaseModel):
     email: str = Field(min_length=3, max_length=254)
     password: str = Field(min_length=1, max_length=128)
     password_repeat: str | None = Field(default=None, max_length=128)
+    nickname: str | None = Field(default=None, max_length=24)
 
 
 class Fix(BaseModel):
@@ -82,7 +83,9 @@ class Fix(BaseModel):
 class Action(BaseModel):
     model_config = ConfigDict(extra='forbid')
     key: uuid.UUID
-    action: Literal['equip', 'unequip', 'heal', 'buy', 'sell', 'start_expedition', 'end_expedition', 'location', 'inspect', 'battle_start', 'battle_action']
+    action: Literal['equip', 'unequip', 'heal', 'buy', 'sell', 'start_expedition', 'end_expedition', 'location', 'search', 'inspect', 'battle_start', 'battle_action', 'upgrade', 'nickname']
+    nickname: str | None = Field(default=None, max_length=24)
+    upgrade: Literal['attack', 'defense', 'hp'] | None = None
     item: str | None = Field(default=None, max_length=40)
     quantity: int = Field(default=1, ge=1, le=99, strict=True)
     slot: Literal['weapon', 'armor'] | None = None
@@ -126,6 +129,9 @@ def set_csrf(response, value):
 
 
 def open_session(db, response, player):
+    state = copy.deepcopy(player.state)
+    refresh_state(state)
+    player.state = state
     token, csrf_token = secrets.token_urlsafe(32), secrets.token_hex(24)
     db.add(Session(token=digest(token), player_id=player.id, csrf=csrf_token,
                    expires=time.time() + cfg.session_days * 86400))
@@ -141,6 +147,13 @@ def normalize_email(email):
         return validate_email(email.strip(), check_deliverability=False).normalized.casefold()
     except EmailNotValidError:
         fail('Podaj poprawny adres e-mail.')
+
+
+def normalize_nickname(value):
+    value = (value or '').strip()
+    if not 2 <= len(value) <= 24 or not all(c.isalnum() or c in ' _-' for c in value):
+        fail('Nick musi mieć 2–24 znaki: litery, cyfry, spacje, _ lub -.')
+    return value
 
 
 def rate_limit(db, request, email):
@@ -184,7 +197,7 @@ def register(body: Credentials, request: Request, response: Response, db: DBSess
         fail('Hasło musi mieć co najmniej 10 znaków.')
     if body.password != body.password_repeat:
         fail('Hasła nie są takie same.')
-    p = Player(email=email, password=ph.hash(body.password), state=new_state())
+    p = Player(email=email, password=ph.hash(body.password), state=new_state(normalize_nickname(body.nickname)))
     db.add(p)
     try:
         db.flush()
@@ -199,7 +212,7 @@ def login(body: Credentials, request: Request, response: Response, db: DBSession
     csrf(request)
     email = normalize_email(body.email)
     rate_limit(db, request, email)
-    p = db.scalar(select(Player).where(Player.email == email))
+    p = db.scalar(select(Player).where(Player.email == email).with_for_update())
     try:
         ph.verify(p.password if p else DUMMY_HASH, body.password)
         if not p:
@@ -224,8 +237,13 @@ def logout(response: Response, session=Depends(current), db: DBSession = Depends
 
 @app.get('/api/me')
 def me(session=Depends(current), db: DBSession = Depends(get_db)):
-    p = db.get(Player, session.player_id)
-    return {'player': public_state(p.state), 'email': p.email}
+    p = db.scalar(select(Player).where(Player.id == session.player_id).with_for_update())
+    s = copy.deepcopy(p.state)
+    refresh_state(s)
+    if s != p.state:
+        p.state = s
+        db.commit()
+    return {'player': public_state(s), 'email': p.email}
 
 
 @app.post('/api/action')
@@ -239,13 +257,14 @@ def action(body: Action, session=Depends(current), db: DBSession = Depends(get_d
             fail('Identyfikator żądania został już użyty z innymi danymi.', 409)
         return receipt.response
     s = copy.deepcopy(p.state)
+    refresh_state(s)
     kind = body.action
     fix = body.fix.model_dump() if body.fix else None
     if kind in ('buy', 'sell', 'inspect', 'battle_start'):
         if not fix or not body.point_id:
             fail('Wymagane miejsce i aktualna lokalizacja.')
         point = point_access(s, str(body.point_id), fix)
-    if kind in ('equip', 'unequip', 'heal', 'buy', 'sell') and s['battle']:
+    if kind in ('equip', 'unequip', 'heal', 'buy', 'sell', 'search', 'upgrade', 'end_expedition') and s['battle']:
         fail('Dokończ aktywną walkę. Apteczkę użyj w ekranie walki.')
     if kind in ('equip', 'buy', 'sell') and body.item not in ITEMS:
         fail('Nieznany przedmiot.')
@@ -260,6 +279,10 @@ def action(body: Action, session=Depends(current), db: DBSession = Depends(get_d
         s['equipment'][body.slot] = None
     elif kind == 'heal':
         medkit(s)
+    elif kind == 'upgrade':
+        choose_upgrade(s, body.upgrade)
+    elif kind == 'nickname':
+        s['nickname'] = normalize_nickname(body.nickname)
     elif kind in ('buy', 'sell'):
         if point['type'] != 'city':
             fail('Handel jest dostępny wyłącznie w osadzie.')
@@ -294,6 +317,23 @@ def action(body: Action, session=Depends(current), db: DBSession = Depends(get_d
         record_location(s, fix, str(body.expedition_id), body.seq)
         if not s['points']:
             s['points'] = generate_world(fix)
+    elif kind == 'search':
+        if not fix:
+            fail('Poczekaj na aktualną lokalizację GPS.')
+        validate_fix(fix)
+        if not s['expedition'] or not s['expedition']['active']:
+            fail('Najpierw rozpocznij wyprawę.')
+        # Remember cleared areas across rerolls so searching cannot reset a cooldown.
+        now = time.time()
+        areas = [p for p in s.get('cleared_areas', []) + s['points']
+                 if p['type'] == 'spot' and p['cooldown_until'] > now]
+        unique = {p['id']: p for p in areas}
+        s['cleared_areas'] = list(unique.values())
+        s['points'] = generate_world(fix)
+        for point in s['points']:
+            if point['type'] == 'spot':
+                point['cooldown_until'] = max([p['cooldown_until'] for p in areas
+                                              if distance(p, point) <= cfg.interaction_radius_m] or [0])
     elif kind == 'inspect':
         if point['type'] == 'spot':
             encounter(point)

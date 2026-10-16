@@ -14,7 +14,7 @@ PASSWORD = 'przetrwanie-123!'
 def auth(c, email='ocalały@example.com', mode='register', password=PASSWORD):
     token = c.get('/api/bootstrap').json()['csrf']
     c.headers.update({'Origin': 'http://testserver', 'X-CSRF-Token': token})
-    r = c.post('/api/' + mode, json=dict(email=email, password=password, password_repeat=password))
+    r = c.post('/api/' + mode, json=dict(email=email, password=password, password_repeat=password, nickname='Wędrowiec'))
     if r.status_code == 200:
         c.headers['X-CSRF-Token'] = r.json()['csrf']
     return r
@@ -57,7 +57,8 @@ def test_registration_session_refresh_login_logout(client):
     assert r.json()['email'] == 'ocalaly@example.com'
     s = me(client)
     assert (s['level'], s['gold'], s['hp'], s['rank']) == (1, 100, 100, 'Neutralna')
-    assert s['equipment'] == {'weapon': 'knife', 'armor': 'jacket'}
+    assert s['equipment'] == {'weapon': None, 'armor': None}
+    assert s['nickname'] == 'Wędrowiec'
     assert 'HttpOnly' in r.headers['set-cookie'] and 'SameSite=lax' in r.headers['set-cookie']
     token = client.cookies.get('pustkowia')
     with SessionLocal() as db:
@@ -116,6 +117,7 @@ def test_world_stability_and_two_player_isolation(client):
 
 def test_trade_atomic_idempotent_equipped_and_insufficient_gold(client):
     auth(client); city = world(client)[0]; f = fix(city); key = str(uuid.uuid4())
+    action(client, 'equip', item='knife')
     assert action(client, 'buy', key, item='club', quantity=1, point_id=city['id'], fix=f).status_code == 200
     assert action(client, 'buy', key, item='club', quantity=1, point_id=city['id'], fix=f).status_code == 200
     assert me(client)['gold'] == 35 and me(client)['inventory']['club'] == 1
@@ -183,6 +185,8 @@ def test_persisted_encounter_battle_turn_heal_flee_and_exclusive(client):
 
 def prepare_easy_battle(client):
     auth(client); p = world(client)[1]
+    action(client, 'equip', item='knife')
+    action(client, 'equip', item='jacket')
     from app.catalog import ENEMIES
     def edit(s):
         s['points'][1]['encounter'] = [dict(kind='rat', **ENEMIES['rat'], max_hp=24)]
@@ -202,7 +206,8 @@ def test_victory_rewards_level_cooldown_and_retry(client):
         assert action(client, 'battle_action', key, battle_id=b['id'], turn=b['turn']).status_code == 200
     s = me(client)
     assert s['battle'] is None and s['last_battle']['result'] == 'victory'
-    assert s['gold'] == 112 and s['level'] == 2 and s['xp'] == 15 and s['hp'] == 112
+    assert s['gold'] == 112 and s['level'] == 2 and s['xp'] == 15 and s['hp'] == 100
+    assert s['upgrade_points'] == 1
     assert sum(s['last_battle']['rewards']['loot'].values()) >= 1
     assert action(client, 'battle_start', point_id=p['id'], fix=fix(p)).status_code == 400
     assert me(client) == s

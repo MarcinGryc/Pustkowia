@@ -39,8 +39,10 @@ def generate_world(p):
     # A mixed fallback would hide which markers were verified. Flag the entire world instead.
     sourced = city is not None and len(selected) == 6
     if not sourced:
-        city = offset(p, 320, .4)
-        selected = [offset(p, d, i * math.tau / 6 + 1) for i, d in enumerate([150, 300, 460, 620, 780, 930])]
+        bearing = random.uniform(0, math.tau)
+        city = offset(p, random.uniform(220, 480), bearing)
+        selected = [offset(p, random.uniform(120 + i * 130, 220 + i * 130),
+                           bearing + i * math.tau / 6 + 1) for i in range(6)]
     names = ['Przepompownia', 'Stary wiadukt', 'Martwy sygnał', 'Zarośnięty magazyn', 'Cichy zaułek', 'Ostatni posterunek']
     points = [dict(id=str(uuid.uuid4()), type='city', name='Osada Iskra', **city)]
     points += [dict(id=str(uuid.uuid4()), type='spot', name=names[i], **q) for i, q in enumerate(selected)]

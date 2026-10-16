@@ -41,9 +41,42 @@ def today():
     return datetime.now(ZoneInfo('Europe/Warsaw')).date().isoformat()
 
 
+def refresh_state(s, now=None):
+    """Upgrade older saves and settle whole minutes, including time spent offline."""
+    now = time.time() if now is None else now
+    s.setdefault('nickname', None)
+    # Preserve HP already earned with the old automatic level bonuses.
+    s.setdefault('upgrades', dict(attack=0, defense=0, hp=(s['level'] - 1) * 12))
+    s.setdefault('upgrade_points', 0)
+    s.setdefault('regen_at', now)
+    if s['battle'] or s['hp'] >= max_hp(s):
+        s['regen_at'] = None
+        return
+    if s['regen_at'] is None:
+        s['regen_at'] = now
+    minutes = max(0, int((now - s['regen_at']) // 60))
+    if minutes:
+        s['hp'] = min(max_hp(s), s['hp'] + minutes)
+        s['regen_at'] = now if s['hp'] == max_hp(s) else s['regen_at'] + minutes * 60
+
+
+def choose_upgrade(s, choice):
+    if s['upgrade_points'] < 1:
+        fail('Nie masz punktów rozwoju do wydania.')
+    if choice not in ('attack', 'defense', 'hp'):
+        fail('Wybierz premię za awans.')
+    amount = 5 if choice == 'hp' else 1
+    s['upgrades'][choice] += amount
+    s['upgrade_points'] -= 1
+    if choice == 'hp':
+        s['hp'] += amount
+
+
 def public_state(s):
     # Only current location and aggregate distance are stored, never a full route.
-    return {**s, 'max_hp': max_hp(s), 'xp_next': xp_threshold(s['level']),
+    return {**{k: v for k, v in s.items() if k not in ('regen_at', 'cleared_areas')},
+            'regen_next_at': s.get('regen_at') + 60 if s.get('regen_at') and not s['battle'] and s['hp'] < max_hp(s) else None,
+            'max_hp': max_hp(s), 'xp_next': xp_threshold(s['level']),
             'stats': stats(s), 'today_distance': s['daily'].get(today(), 0)}
 
 
@@ -61,6 +94,7 @@ def medkit(s):
     inventory_add(s, 'medkit', -1)
     before = s['hp']
     s['hp'] = min(max_hp(s), s['hp'] + ITEMS['medkit']['heal'])
+    s['regen_at'] = time.time()
     return s['hp'] - before
 
 
@@ -82,6 +116,7 @@ def start_battle(s, point):
     s['battle'] = dict(id=str(uuid.uuid4()), point_id=point['id'], enemies=enemies,
                        index=0, log=['Rozpoczynasz walkę.'], turn=0)
     s['last_battle'] = None
+    s['regen_at'] = time.time()
 
 
 def finish_battle(s, result):
@@ -102,6 +137,7 @@ def finish_battle(s, result):
             s['level'] += 1
             levels += 1
         if levels:
+            s['upgrade_points'] = s.get('upgrade_points', 0) + levels
             s['hp'] = max_hp(s)
         rewards['levels'] = levels
     if result == 'defeat':
@@ -110,6 +146,7 @@ def finish_battle(s, result):
     p['encounter'] = None
     s['last_battle'] = dict(id=b['id'], result=result, rewards=rewards, log=b['log'][-12:])
     s['battle'] = None
+    s['regen_at'] = time.time()
 
 
 def battle_action(s, battle_id, turn, action):

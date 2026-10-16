@@ -1,4 +1,6 @@
 """Jedyne źródło balansu przedmiotów, przeciwników i awansów."""
+import time
+
 ITEMS = {
     'knife': dict(name='Zardzewiały nóż', kind='weapon', icon='knife', description='Nie wygląda najlepiej. Wciąż spełnia swoją rolę.', attack=7, defense=0, price=30, sell=12),
     'club': dict(name='Metalowa pałka', kind='weapon', icon='club', description='Kawał rury i odrobina pewności siebie.', attack=12, defense=0, price=65, sell=26),
@@ -16,25 +18,26 @@ ENEMIES = {
 }
 BASE_ATTACK = 6
 BASE_HP = 100
-HP_PER_LEVEL = 12
-SHOP = ['club', 'pistol', 'scrap_armor', 'medkit', 'jacket']
+SHOP = ['knife', 'club', 'pistol', 'jacket', 'scrap_armor', 'medkit']
 
 
 def xp_threshold(level):
     return 100 * level
 
 
-def new_state():
-    return dict(level=1, gold=100, rank='Neutralna', hp=BASE_HP, xp=0,
+def new_state(nickname=None):
+    return dict(nickname=nickname, level=1, gold=100, rank='Neutralna', hp=BASE_HP, xp=0,
+                upgrades=dict(attack=0, defense=0, hp=0), upgrade_points=0, regen_at=time.time(),
                 inventory={'knife': 1, 'jacket': 1, 'medkit': 2},
-                equipment={'weapon': 'knife', 'armor': 'jacket'}, points=[],
+                equipment={'weapon': None, 'armor': None}, points=[],
                 battle=None, last_battle=None, expedition=None, daily={}, location=None)
 
 
 def max_hp(s):
-    return BASE_HP + (s['level'] - 1) * HP_PER_LEVEL
+    return BASE_HP + s.get('upgrades', {}).get('hp', (s['level'] - 1) * 12)
 
 
 def stats(s):
-    return dict(attack=BASE_ATTACK + ITEMS.get(s['equipment']['weapon'], {}).get('attack', 0),
-                defense=ITEMS.get(s['equipment']['armor'], {}).get('defense', 0))
+    bonuses = s.get('upgrades', {})
+    return dict(attack=BASE_ATTACK + bonuses.get('attack', 0) + ITEMS.get(s['equipment']['weapon'], {}).get('attack', 0),
+                defense=bonuses.get('defense', 0) + ITEMS.get(s['equipment']['armor'], {}).get('defense', 0))

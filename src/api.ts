@@ -17,7 +17,12 @@ let queue: Promise<unknown> = Promise.resolve()
 export const api = {
   bootstrap: () => request<Config>('bootstrap'),
   me: () => request<{ player: Player; email: string }>('me'),
-  auth: (mode: string, email: string, password: string, repeat: string) => request<{ player: Player; email: string }>(mode, { email, password, password_repeat: repeat }),
+  auth: (mode: string, email: string, password: string, repeat: string, nickname?: string) => request<{ player: Player; email: string }>(mode, { email, password, password_repeat: repeat, nickname }),
+  refresh: (): Promise<Player> => {
+    const result = queue.then(async () => (await api.me()).player)
+    queue = result.catch(() => undefined)
+    return result
+  },
   logout: () => request('logout', {}),
   action: (data: ActionData): Promise<Player> => {
     const body = { ...data, key: crypto.randomUUID() }
